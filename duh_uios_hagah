@@ -1,0 +1,153 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import os
+import pandas as pd
+from docx import Document
+from fpdf import FPDF
+import PyPDF2
+
+# Lista de formatos que o programa aceita
+formatos_possiveis = ["PDF", "WORD", "TXT", "CSV", "XLSX"]
+
+# Função para selecionar um arquivo do computador
+def selecionar_arquivo():
+    caminho = filedialog.askopenfilename(filetypes=[("Todos os arquivos", "*.*")])
+    if caminho:
+        ext = os.path.splitext(caminho)[1].lower().replace('.', '')
+        ext = "WORD" if ext == "docx" else ext.upper()
+        if ext in formatos_possiveis:
+            formato_origem.set(ext)
+            caminho_arquivo.set(caminho)
+            mostrar_botoes(ext)  # Exibe os botões de conversão
+        else:
+            messagebox.showerror("Erro", f"Formato '{ext}' não suportado.")
+
+# Função que exibe os botões de conversão para os outros formatos
+def mostrar_botoes(formato_atual):
+    for widget in frame_botoes.winfo_children():
+        widget.destroy()
+
+    for formato in formatos_possiveis:
+        if formato != formato_atual:
+            btn = tk.Button(frame_botoes, text=f"Converter para {formato}",
+                            command=lambda f=formato: converter_para(f))
+            btn.pack(pady=3)
+
+# Função para ler o conteúdo do arquivo original
+def ler_arquivo(caminho, formato):
+    if formato == "TXT":
+        with open(caminho, "r", encoding="utf-8") as f:
+            return f.read()
+    elif formato == "WORD":
+        doc = Document(caminho)
+        return "\n".join([p.text for p in doc.paragraphs])
+    elif formato == "PDF":
+        with open(caminho, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+    elif formato in ["CSV", "XLSX"]:
+        try:
+            if formato == "CSV":
+                return pd.read_csv(caminho)
+            else:
+                return pd.read_excel(caminho)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao ler o arquivo: {e}")
+            return None
+
+# Função que cria um PDF simples a partir de texto
+def salvar_como_pdf(texto, caminho_saida):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    for linha in texto.split('\n'):
+        try:
+            pdf.cell(200, 10, txt=linha.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+        except:
+            pdf.cell(200, 10, txt="[Erro de caractere]", ln=True)
+    pdf.output(caminho_saida)
+
+# Função que salva o conteúdo no formato de destino
+def salvar_arquivo(conteudo, formato_destino, caminho_saida):
+    if isinstance(conteudo, pd.DataFrame):
+        try:
+            if formato_destino == "CSV":
+                conteudo.to_csv(caminho_saida, index=False, encoding='utf-8')
+            elif formato_destino == "XLSX":
+                conteudo.to_excel(caminho_saida, index=False)
+            else:
+                texto = conteudo.to_string(index=False)
+                if formato_destino == "TXT":
+                    with open(caminho_saida, "w", encoding="utf-8") as f:
+                        f.write(texto)
+                elif formato_destino == "PDF":
+                    salvar_como_pdf(texto, caminho_saida)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro na conversão: {e}")
+    elif isinstance(conteudo, str):
+        try:
+            if formato_destino == "TXT":
+                with open(caminho_saida, "w", encoding="utf-8") as f:
+                    f.write(conteudo)
+            elif formato_destino == "PDF":
+                salvar_como_pdf(conteudo, caminho_saida)
+            elif formato_destino == "WORD":
+                doc = Document()
+                for linha in conteudo.split("\n"):
+                    doc.add_paragraph(linha)
+                doc.save(caminho_saida)
+            elif formato_destino in ["CSV", "XLSX"]:
+                linhas = [l.split(";") for l in conteudo.split("\n") if l.strip() != ""]
+                df = pd.DataFrame(linhas)
+                if formato_destino == "CSV":
+                    df.to_csv(caminho_saida, index=False, encoding='utf-8')
+                else:
+                    df.to_excel(caminho_saida, index=False)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro na conversão: {e}")
+
+# Função que coordena o processo de conversão
+def converter_para(formato_destino):
+    origem = formato_origem.get()
+    arq = caminho_arquivo.get()
+
+    caminho_saida = filedialog.asksaveasfilename(
+        defaultextension=f".{formato_destino.lower()}",
+        filetypes=[(f"{formato_destino} Files", f"*.{formato_destino.lower()}")]
+    )
+
+    if caminho_saida:
+        conteudo = ler_arquivo(arq, origem)
+        if conteudo is not None:
+            salvar_arquivo(conteudo, formato_destino, caminho_saida)
+            messagebox.showinfo("Conversão Concluída",
+                                f"Arquivo convertido de {origem} para {formato_destino}!\n\nSalvo em: {caminho_saida}")
+
+# Criação da interface gráfica (janela)
+janela = tk.Tk()
+
+# Ajustando o título da janela com o símbolo centralizado
+titulo = "Conversor de Documentos" + " " * 19 + "۞"
+janela.title(titulo)
+
+# Configuração da janela
+janela.geometry("500x400")
+janela.configure(bg="black")
+
+# Variáveis que armazenam o formato e caminho do arquivo
+formato_origem = tk.StringVar()
+caminho_arquivo = tk.StringVar()
+
+# Título da aplicação dentro da janela
+tk.Label(janela, text="Conversor de Documentos", font=("Arial", 16), fg="white", bg="black").pack(pady=10)
+
+# Botão para selecionar o arquivo
+btn_selecionar = tk.Button(janela, text="Selecionar Arquivo", command=selecionar_arquivo, fg="black", bg="white")
+btn_selecionar.pack(pady=10)
+
+# Área onde os botões de conversão serão exibidos
+frame_botoes = tk.Frame(janela, bg="black")
+frame_botoes.pack(pady=20)
+
+# Inicia a janela
+janela.mainloop()
